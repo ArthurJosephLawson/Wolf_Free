@@ -1,0 +1,80 @@
+name: Bug report
+description: Something in Wolf does not do what it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. The two most useful things you
+        can give me are what you expected to happen, and the output of
+        `npm run verify` if you have the repo checked out.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you do to make it happen?
+      placeholder: |
+        The focus sparkline showed 0 minutes for Tuesday even though I logged a
+        25-minute session that ended at 00:15.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Starting from a fresh launch, if you can.
+      placeholder: |
+        1. Open Settings and set the focus block to 25 minutes
+        2. Start a session and stop it just after midnight
+        3. Open Home
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Wolf version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: install
+    attributes:
+      label: How did you install Wolf?
+      description: Release archive, or from source?
+      placeholder: Release archive
+
+  - type: input
+    id: verify
+    attributes:
+      label: Output of `npm run verify`
+      description: Paste it if the app still runs, or leave blank if it will not start.
+      render: shell
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Anything else?
+      description: >
+        Relevant log lines, or a screenshot.

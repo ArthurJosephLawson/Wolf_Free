@@ -1,0 +1,44 @@
+name: Feature request
+description: Suggest something Wolf should do
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Wolf is deliberately local-first and small. The suggestions that tend to
+        work best are ones that keep it that way, so please say whether your idea
+        needs the network at all.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the situation, not the solution. This is the part I most need.
+      placeholder: |
+        At the end of a long focus block I want to know what to do next without
+        switching to the Tasks tab and sorting by due date.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like Wolf to do about it?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Does this need to talk to anything outside your machine?
+      options:
+        - "No, it can stay entirely local"
+        - "Yes, it would need a network service"
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Have you worked around it already?
+      description: If so, how? A workaround in use is real evidence for a request.
