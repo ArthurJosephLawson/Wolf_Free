@@ -9,6 +9,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const iconDir = join(root, "src-tauri", "icons");
 const publicDir = join(root, "public");
 const brandDir = join(root, "src", "assets", "brand");
+const spritePath = join(root, "src", "assets", "wolf", "wolf-pixels.json");
 
 const SVG = readFileSync(join(brandDir, "wolf-mark.svg"), "utf8");
 const viewBox = SVG.match(/viewBox="([^"]+)"/)[1]
@@ -93,11 +94,10 @@ function encodePng(width, height, rgba) {
   ihdr.writeUInt32BE(height, 4);
   ihdr[8] = 8;
   ihdr[9] = 6;
-  const stride = width * 4;
-  const raw = Buffer.alloc((stride + 1) * height);
+  const raw = Buffer.alloc(height * (1 + width * 4));
   for (let y = 0; y < height; y += 1) {
-    raw[y * (stride + 1)] = 0;
-    rgba.copy(raw, y * (stride + 1) + 1, y * stride, (y + 1) * stride);
+    raw[y * (1 + width * 4)] = 0;
+    rgba.copy(raw, y * (1 + width * 4) + 1, y * width * 4, (y + 1) * width * 4);
   }
   return Buffer.concat([
     signature,
@@ -107,77 +107,145 @@ function encodePng(width, height, rgba) {
   ]);
 }
 
-const hex = (h) => {
-  const s = h.replace("#", "");
+function hex(value) {
+  const s = value.replace("#", "");
   return [
     parseInt(s.slice(0, 2), 16),
     parseInt(s.slice(2, 4), 16),
     parseInt(s.slice(4, 6), 16),
   ];
-};
+}
 
 const TILE = hex("#101619");
 const TILE_EDGE = hex("#26333a");
 const MARK = hex("#e8eef2");
-const S = 4;
+const SS = 4;
 
-function roundedRectCoverage(size, x, y, radius) {
-  const r = radius;
-  const inX = x >= r && x <= size - r;
-  const inY = y >= r && y <= size - r;
-  if (inX || inY) {
-    if (x >= 0 && x <= size && y >= 0 && y <= size) return true;
+const sprite = JSON.parse(readFileSync(spritePath, "utf8"));
+const spriteRows = sprite.rows;
+const spriteRgb = Object.fromEntries(
+  Object.entries(sprite.palette).map(([key, value]) => [
+    key,
+    value ? hex(value) : null,
+  ]),
+);
+
+const FACE_TOP = 2;
+const FACE_BOTTOM = 15;
+let faceLeft = Infinity;
+let faceRight = -Infinity;
+for (let y = FACE_TOP; y <= FACE_BOTTOM; y += 1) {
+  const row = spriteRows[y];
+  for (let x = 0; x < row.length; x += 1) {
+    if (row[x] !== ".") {
+      if (x < faceLeft) faceLeft = x;
+      if (x > faceRight) faceRight = x;
+    }
   }
-  const cx = x < r ? r : size - r;
-  const cy = y < r ? r : size - r;
-  return Math.hypot(x - cx, y - cy) <= r;
+}
+const CROP_W = faceRight - faceLeft + 1;
+const CROP_H = FACE_BOTTOM - FACE_TOP + 1;
+
+const RADIUS = 0.22;
+const BORDER = 0.012;
+const FACE_FILL = 0.8;
+const TILE_SAMPLES = SS * SS;
+
+function sdRoundRect(px, py, hw, hh, radius) {
+  const qx = Math.abs(px) - hw + radius;
+  const qy = Math.abs(py) - hh + radius;
+  return (
+    Math.min(Math.max(qx, qy), 0) +
+    Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) -
+    radius
+  );
 }
 
-function sample(size, px, py, { tile }) {
-  let markHits = 0;
-  let edgeHits = 0;
-  let tileHits = 0;
-  for (let sy = 0; sy < S; sy += 1) {
-    for (let sx = 0; sx < S; sx += 1) {
-      const fx = (px + (sx + 0.5) / S) / size;
-      const fy = (py + (sy + 0.5) / S) / size;
-      if (tile) {
-        const inside = roundedRectCoverage(
-          size,
-          px + (sx + 0.5) / S,
-          py + (sy + 0.5) / S,
-          size * 0.22,
-        );
-        if (inside) tileHits += 1;
-        const rx = (px + (sx + 0.5) / S - size * 0.22) / (size * 0.56);
-        const ry = (py + (sy + 0.5) / S - size * 0.22) / (size * 0.56);
-        if (inMark((rx * VB_W) / 1, (ry * VB_H) / 1)) markHits += 1;
-      } else {
-        if (inMark(fx * VB_W, fy * VB_H)) markHits += 1;
+function tilePixel(size, x, y) {
+  const half = size / 2;
+  const radius = size * RADIUS;
+  const border = Math.max(size * BORDER, 1);
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  let hits = 0;
+  for (let sy = 0; sy < SS; sy += 1) {
+    for (let sx = 0; sx < SS; sx += 1) {
+      const px = x + (sx + 0.5) / SS - half;
+      const py = y + (sy + 0.5) / SS - half;
+      const outer = sdRoundRect(px, py, half, half, radius);
+      if (outer > 0) continue;
+      const inner = sdRoundRect(
+        px,
+        py,
+        Math.max(half - border, 0),
+        Math.max(half - border, 0),
+        Math.max(radius - border, 0),
+      );
+      const c = inner > 0 ? TILE_EDGE : TILE;
+      r += c[0];
+      g += c[1];
+      b += c[2];
+      hits += 1;
+    }
+  }
+  if (hits === 0) return [0, 0, 0, 0];
+  return [
+    Math.round(r / hits),
+    Math.round(g / hits),
+    Math.round(b / hits),
+    Math.round((255 * hits) / TILE_SAMPLES),
+  ];
+}
+
+function composeFace(size) {
+  const rgba = Buffer.alloc(size * size * 4, 0);
+  const inner = size * FACE_FILL;
+  const scale = Math.min(inner / CROP_W, inner / CROP_H);
+  const drawW = scale * CROP_W;
+  const drawH = scale * CROP_H;
+  const originX = (size - drawW) / 2;
+  const originY = (size - drawH) / 2;
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const fx = x + 0.5 - originX;
+      const fy = y + 0.5 - originY;
+      let color = tilePixel(size, x, y);
+      if (fx >= 0 && fy >= 0 && fx < drawW && fy < drawH) {
+        const srcX = Math.min(CROP_W - 1, Math.floor((fx / drawW) * CROP_W));
+        const srcY = Math.min(CROP_H - 1, Math.floor((fy / drawH) * CROP_H));
+        const fur = spriteRgb[spriteRows[FACE_TOP + srcY][faceLeft + srcX]];
+        if (fur) color = [fur[0], fur[1], fur[2], 255];
       }
+      const o = (y * size + x) * 4;
+      rgba[o] = color[0];
+      rgba[o + 1] = color[1];
+      rgba[o + 2] = color[2];
+      rgba[o + 3] = color[3];
     }
   }
-  const n = S * S;
-  if (tile) {
-    const t = tileHits / n;
-    const m = Math.min(markHits / n, t);
-    if (t === 0) return null;
-    const out = [0, 0, 0, Math.round(t * 255)];
-    for (let i = 0; i < 3; i += 1) {
-      out[i] = Math.round(TILE[i] * (1 - m) + MARK[i] * m);
+  return rgba;
+}
+
+function sampleMark(size, px, py) {
+  let markHits = 0;
+  for (let sy = 0; sy < SS; sy += 1) {
+    for (let sx = 0; sx < SS; sx += 1) {
+      const fx = (px + (sx + 0.5) / SS) / size;
+      const fy = (py + (sy + 0.5) / SS) / size;
+      if (inMark(fx * VB_W, fy * VB_H)) markHits += 1;
     }
-    return out;
   }
-  const m = markHits / n;
+  const m = markHits / TILE_SAMPLES;
   if (m === 0) return null;
   return [MARK[0], MARK[1], MARK[2], Math.round(m * 255)];
 }
 
-function compose(size, opts) {
+function composeMark(size) {
   const rgba = Buffer.alloc(size * size * 4, 0);
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
-      const c = sample(size, x, y, opts);
+      const c = sampleMark(size, x, y);
       if (!c) continue;
       const o = (y * size + x) * 4;
       rgba[o] = c[0];
@@ -211,11 +279,11 @@ const targets = [
 ];
 
 for (const { file, dir, size, tile } of targets) {
-  const rgba = compose(size, { tile });
+  const rgba = tile ? composeFace(size) : composeMark(size);
   const label = dir === iconDir ? "src-tauri/icons" : "public";
   writeFileSync(join(dir, file), encodePng(size, size, rgba));
   console.log(
-    `wrote ${label}/${file} (${size}x${size}${tile ? "" : ", monochrome"})`,
+    `wrote ${label}/${file} (${size}x${size}${tile ? ", wolf face" : ", monochrome mark"})`,
   );
 }
 
@@ -227,4 +295,4 @@ writeFileSync(join(brandDir, "wolf-mark.ts"), ts);
 console.log(
   `wrote src/assets/brand/wolf-mark.ts (${tsPath.length} chars of path data)`,
 );
-console.log(`\n${targets.length} images generated from the wolf mark`);
+console.log(`\n${targets.length} images generated from the wolf face sprite`);
